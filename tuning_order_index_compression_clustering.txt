@@ -1,0 +1,50 @@
+reset;
+
+option solver gurobi;                          # selected solver for the LP
+
+param S := 3;                                  # number of features
+
+param W0 := 100;                               # costs untuned workload
+
+param W {a in 1..S,b in 1..S:b<>a} default 0;  # costs tuning a then b
+
+let W[1,2]:=75; let W[1,3]:=89;                # measured input data (cf. Table 1 in paper)
+let W[2,1]:=68; let W[2,3]:=60;
+let W[3,1]:=84; let W[3,2]:=66;			 
+			 
+param d {a in 1..S,b in 1..S:b<>a} := W[b,a]/W[a,b]; # ratio of both pairwise tuning orders
+                                                     # ((a,b) is beneficial compared to (b,a) if d[a,b]>=1)
+
+var x {a in 1..S,k in 1..S} binary;                  # whether tune a in step k
+
+var y {a in 1..S,b in 1..S:b<>a} binary;             # whether tune a before b
+
+
+maximize target: sum{a in 1..S,b in 1..S:b<>a} y[a,b]*d[a,b]*W0/W[a,b];  # objective  (1)
+
+subject to nb1 {a in 1..S}: sum{k in 1..S} x[a,k] = 1;                 # constraint (2a)
+
+subject to nb2 {k in 1..S}: sum{a in 1..S} x[a,k] = 1;                 # constraint (2b)
+
+subject to nb3 {a in 1..S,b in 1..S:b<>a}: y[a,b] + y[b,a] = 1;        # constraint (3)
+
+subject to nb4 {a in 1..S,b in 1..S:b<>a}: S*y[a,b]                    # constraint (4)
+                >= sum{k in 1..S} k*x[b,k] - sum{k in 1..S} k*x[a,k];
+
+solve;                                                                 # solve LP (1)-(4)
+
+var order {k in 1..S} = sum{a in 1..S} a*x[a,k];                       # final tuning order
+
+var sel   {a in 1..S,b in 1..S:b<>a} = if y[a,b]=1 then d[a,b]*W0/W[a,b]; # selected objective summands
+
+var unsel {a in 1..S,b in 1..S:b<>a} = if y[a,b]=0 then d[a,b]*W0/W[a,b]; # unselected objective summands
+
+display sel;                                     # output selected objective summands
+
+display unsel;                                   # output unselected objective summands
+
+display order;                                   # output order
+
+display S, target, _solve_elapsed_time;          # output objective and solve time
+
+end;

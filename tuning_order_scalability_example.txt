@@ -1,0 +1,61 @@
+reset;
+
+option randseed'3';                            # randseed for Table 3 from paper, Example 1 (K=10)
+
+option solver gurobi;                          # selected solver for the LP
+
+#option gurobi_options 'mipgap=0.1';           # optional use of optimality gap
+
+param S default 10;                            # number of features (use S=K=10 for Table 3 from paper, Example 1)
+
+param W0 := 100;                               # costs untuned workload
+
+param W1{a in 1..S} default Uniform(20,100);   # costs when only tuning a
+
+param pi default 0.5;                          # probability for pairwise feature dependencies
+
+param Z {a in 1..S,b in 1..S:a<b} := round(Uniform(pi/2,pi/2+0.5)); # random realizations with probability pi
+                                                                    # whether feature a and b are independent
+
+param W {a in 1..S,b in 1..S:b<>a} := round(if a<b then W1[a] * Uniform(1/b,1) # exemplary costs of tuning first a then b
+             else (if Z[min(a,b),max(a,b)]=1 then W[min(a,b),max(a,b)]
+			       else W1[a] * Uniform(1/b,1) )); 
+
+param d {a in 1..S,b in 1..S:b<>a} := W[b,a]/W[a,b]; # ratio of both pairwise tuning orders
+                                                     # ((a,b) is beneficial compared to (b,a) if d[a,b]>=1)
+
+var x {a in 1..S,k in 1..S} binary;        # whether to tune a in step k
+
+var y {a in 1..S,b in 1..S:b<>a} binary;   # whether to tune a before b
+
+
+maximize target: sum{a in 1..S,b in 1..S:b<>a} y[a,b]*d[a,b]*W0/W[a,b];  # objective  (1)
+
+subject to nb1 {a in 1..S}: sum{k in 1..S} x[a,k] = 1;                 # constraint (2a)
+
+subject to nb2 {k in 1..S}: sum{a in 1..S} x[a,k] = 1;                 # constraint (2b)
+
+subject to nb3 {a in 1..S,b in 1..S:b<>a}: y[a,b] + y[b,a] = 1;        # constraint (3)
+
+subject to nb4 {a in 1..S,b in 1..S:b<>a}: S*y[a,b]                    # constraint (4)
+                >= sum{k in 1..S} k*x[b,k] - sum{k in 1..S} k*x[a,k];
+
+solve;                                                                 # solve LP (1)-(4)
+
+var order {k in 1..S} = sum{a in 1..S} a*x[a,k];                       # final tuning order
+
+var sel   {a in 1..S,b in 1..S:b<>a} = if y[a,b]=1 then d[a,b]*W0/W[a,b]; # selected objective summands
+
+var unsel {a in 1..S,b in 1..S:b<>a} = if y[a,b]=0 then d[a,b]*W0/W[a,b]; # unselected objective summands
+
+display W;                                       # input data (cf. Table 3 from paper, for S=K=10)
+
+display sel;                                     # output selected objective summands
+
+display unsel;                                   # output unselected objective summands
+
+display order;                                   # output order
+
+display S, target, _solve_elapsed_time;          # output objective and solve time
+
+end;
